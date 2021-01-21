@@ -77,7 +77,9 @@ func isEOL(ch byte) bool {
 	return ch == '\n' || ch == '\r'
 }
 
-func isWhitespace(ch byte) bool {
+// IsAsciiWhitespace returns true if `ch`
+// is one of the ASCII whitespaces.
+func IsAsciiWhitespace(ch byte) bool {
 	switch ch {
 	case 0, 9, 10, 12, 13, 32:
 		return true
@@ -92,7 +94,7 @@ func isDelimiter(ch byte) bool {
 	case 40, 41, 60, 62, 91, 93, 123, 125, 47, 37:
 		return true
 	default:
-		return isWhitespace(ch)
+		return IsAsciiWhitespace(ch)
 	}
 }
 
@@ -347,7 +349,7 @@ func (pr *Tokenizer) read() (byte, bool) {
 // HasEOLBeforeToken checks if EOL happens before the next token.
 func (pr Tokenizer) HasEOLBeforeToken() bool {
 	for i := pr.currentPos; i < len(pr.data); i++ {
-		if !isWhitespace(pr.data[i]) {
+		if !IsAsciiWhitespace(pr.data[i]) {
 			break
 		}
 		if isEOL(pr.data[i]) {
@@ -364,7 +366,7 @@ func (pr Tokenizer) CurrentPosition() int { return pr.currentPos }
 // reads and advances, mutating `pos`
 func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 	ch, ok := pr.read()
-	for ok && isWhitespace(ch) {
+	for ok && IsAsciiWhitespace(ch) {
 		ch, ok = pr.read()
 	}
 	if !ok {
@@ -419,7 +421,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 			ok2 bool
 		)
 		for {
-			for ok1 && isWhitespace(v1) {
+			for ok1 && IsAsciiWhitespace(v1) {
 				v1, ok1 = pr.read()
 			}
 			if v1 == '>' {
@@ -430,7 +432,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 				return Token{}, fmt.Errorf("invalid hex char %d (%s)", v1, string(rune(v1)))
 			}
 			v2, ok2 = pr.read()
-			for ok2 && isWhitespace(v2) {
+			for ok2 && IsAsciiWhitespace(v2) {
 				v2, ok2 = pr.read()
 			}
 			if v2 == '>' {
