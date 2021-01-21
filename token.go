@@ -6,12 +6,12 @@ package tokenizer
 // Code ported from the Java PDFTK library - BK 2020
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 )
 
 type Fl = float64
@@ -107,7 +107,7 @@ func isDigit(ch byte) bool {
 // which is left to parsing packages.
 type Token struct {
 	Kind  Kind
-	Value string // additional value found in the data
+	Value []byte // additional value found in the data
 }
 
 // Int returns the integer value of the token,
@@ -120,7 +120,7 @@ func (t Token) Int() (int, error) {
 
 // Float returns the float value of the token.
 func (t Token) Float() (Fl, error) {
-	return strconv.ParseFloat(t.Value, 64)
+	return strconv.ParseFloat(string(t.Value), 64)
 }
 
 // IsNumber returns `true` for integers and floats.
@@ -130,7 +130,13 @@ func (t Token) IsNumber() bool {
 
 // return true for binary stream or inline data
 func (t Token) startsBinary() bool {
-	return t.Kind == Other && (t.Value == "stream" || t.Value == "ID")
+	s := string(t.Value)
+	return t.Kind == Other && (s == "stream" || s == "ID")
+}
+
+// IsOther return true if it has `Other` kind, with the given value
+func (t Token) IsOther(value string) bool {
+	return t.Kind == Other && string(t.Value) == value
 }
 
 // Tokenize consume all the input, splitting it
@@ -404,7 +410,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 		if ok { // we moved, so its safe go back
 			pr.pos--
 		}
-		return Token{Kind: Name, Value: string(outBuf)}, nil
+		return Token{Kind: Name, Value: outBuf}, nil
 	case '>':
 		ch, ok = pr.read()
 		if ch != '>' {
@@ -448,7 +454,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 			outBuf = append(outBuf, ch)
 			v1, ok1 = pr.read()
 		}
-		return Token{Kind: StringHex, Value: string(outBuf)}, nil
+		return Token{Kind: StringHex, Value: outBuf}, nil
 	case '%':
 		ch, ok = pr.read()
 		for ok && ch != '\r' && ch != '\n' {
@@ -536,7 +542,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 		if !ok {
 			return Token{}, errors.New("error reading string: unexpected EOF")
 		}
-		return Token{Kind: String, Value: string(outBuf)}, nil
+		return Token{Kind: String, Value: outBuf}, nil
 	default:
 		pr.pos-- // we need the test char
 		if token, ok := pr.readNumber(); ok {
@@ -552,8 +558,8 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 		if ok {
 			pr.pos--
 		}
-		cmd := string(outBuf)
-		if cmd == "RD" || cmd == "-|" {
+
+		if cmd := string(outBuf); cmd == "RD" || cmd == "-|" {
 			// return the next CharString instead
 			if previous.Kind == Integer {
 				f, err := previous.Int()
@@ -565,7 +571,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 				return Token{}, errors.New("expected INTEGER before -| or RD")
 			}
 		}
-		return Token{Kind: Other, Value: cmd}, nil
+		return Token{Kind: Other, Value: outBuf}, nil
 	}
 }
 
@@ -574,7 +580,7 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 func (pr *Tokenizer) readNumber() (Token, bool) {
 	markedPos := pr.pos
 
-	sb, radix := &strings.Builder{}, &strings.Builder{}
+	sb, radix := &bytes.Buffer{}, &bytes.Buffer{}
 	c, ok := pr.read() // one char is OK
 	hasDigit := false
 	// optional + or -
@@ -600,7 +606,7 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 	} else if c == '#' {
 		// PostScript radix number takes the form base#number
 		radix = sb
-		sb = &strings.Builder{}
+		sb.Reset()
 		c, ok = pr.read()
 	} else if sb.Len() == 0 || !hasDigit {
 		// failure
@@ -619,7 +625,7 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 		if ok {
 			pr.pos--
 		}
-		return Token{Value: sb.String(), Kind: Integer}, true
+		return Token{Value: sb.Bytes(), Kind: Integer}, true
 	}
 
 	// check required digit
@@ -641,9 +647,9 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 	if radix := radix.String(); radix != "" {
 		intRadix, _ := strconv.Atoi(radix)
 		valInt, _ := strconv.ParseInt(sb.String(), intRadix, 0)
-		return Token{Value: strconv.Itoa(int(valInt)), Kind: Integer}, true
+		return Token{Value: []byte(strconv.Itoa(int(valInt))), Kind: Integer}, true
 	}
-	return Token{Value: sb.String(), Kind: Float}, true
+	return Token{Value: sb.Bytes(), Kind: Float}, true
 }
 
 // reads a binary CharString.
@@ -656,7 +662,7 @@ func (pr *Tokenizer) readCharString(length int) Token {
 	if maxL >= len(pr.data) {
 		maxL = len(pr.data)
 	}
-	out := Token{Value: string(pr.data[pr.pos:maxL]), Kind: CharString}
+	out := Token{Value: pr.data[pr.pos:maxL], Kind: CharString}
 	pr.pos += length
 	return out
 }

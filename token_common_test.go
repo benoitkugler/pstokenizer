@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -40,7 +41,7 @@ func tokenizeOne(s string, tk *Tokenizer) error {
 		if token.Kind == EOF {
 			break
 		}
-		if token != next {
+		if !reflect.DeepEqual(token, next) {
 			return fmt.Errorf("expected %v got %v", next, token)
 		}
 		next, _ = tk.PeekToken()

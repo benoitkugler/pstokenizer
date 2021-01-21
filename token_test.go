@@ -65,12 +65,12 @@ func TestFloats(t *testing.T) {
 }
 
 func TestConvert(t *testing.T) {
-	tk := Token{Value: "78.45"}
+	tk := Token{Value: []byte("78.45")}
 	_, err := tk.Float()
 	if err != nil {
 		t.Error(err)
 	}
-	tk = Token{Value: "78."}
+	tk = Token{Value: []byte("78.")}
 	_, err = tk.Float()
 	if err != nil {
 		t.Error(err)
@@ -120,7 +120,7 @@ func TestResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exp := (Token{Kind: Integer, Value: "8"}); nplus2 != exp {
+	if exp := (Token{Kind: Integer, Value: []byte("8")}); !reflect.DeepEqual(nplus2, exp) {
 		t.Errorf("expected %v got %v", exp, nplus2)
 	}
 	_, err = tk.NextToken()
@@ -135,8 +135,8 @@ func TestResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next != (Token{Kind: Integer, Value: "9"}) {
-		t.Errorf("expected %v, got %v", Token{Kind: Integer, Value: "9"}, next)
+	if exp := (Token{Kind: Integer, Value: []byte("9")}); !reflect.DeepEqual(next, exp) {
+		t.Errorf("expected %v, got %v", exp, next)
 	}
 	if p := tk.CurrentPosition(); p != 5 {
 		t.Errorf("expected %d, got %d", 5, p)
@@ -150,8 +150,8 @@ func TestResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next != (Token{Kind: Integer, Value: "6"}) {
-		t.Errorf("expected %v, got %v", Token{Kind: Integer, Value: "6"}, next)
+	if exp := (Token{Kind: Integer, Value: []byte("6")}); !reflect.DeepEqual(next, exp) {
+		t.Errorf("expected %v, got %v", exp, next)
 	}
 	chunk = tk.SkipBytes(456)
 	if !bytes.Equal(chunk, []byte(" 4")) {
