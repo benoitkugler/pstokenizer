@@ -16,6 +16,7 @@ import (
 
 type Fl = float64
 
+// Kind is the kind of token.
 type Kind uint8
 
 const (
@@ -30,7 +31,6 @@ const (
 	EndArray
 	StartDic
 	EndDic
-	// Ref
 	Other // include commands in content stream
 
 	StartProc  // only valid in PostScript files
@@ -106,8 +106,8 @@ func isDigit(ch byte) bool {
 // `Value` must be interpreted according to `Kind`,
 // which is left to parsing packages.
 type Token struct {
-	Kind  Kind
 	Value []byte // additional value found in the data
+	Kind  Kind
 }
 
 // Int returns the integer value of the token,
@@ -174,24 +174,23 @@ func (tk *Tokenizer) readAll() ([]Token, error) {
 // we support it in the tokenizer (no confusion with other types, so
 // no compromise).
 type Tokenizer struct {
-	src io.Reader // if not nil, 'data' will be read from it
-
 	data []byte
+	src  io.Reader // if not nil, 'data' will be read from it
 
 	// since indirect reference require
 	// to read two more tokens
 	// we store the two next token
 
+	aError error // +1
+	aToken Token // +1
+
+	aaError error // +2
+	aaToken Token // +2
+
 	pos int // main position (end of the aaToken)
 
 	currentPos int // end of the current token
 	nextPos    int // end of the +1 token
-
-	aToken Token // +1
-	aError error // +1
-
-	aaToken Token // +2
-	aaError error // +2
 }
 
 // NewTokenizer returns a tokenizer working on the
@@ -545,7 +544,8 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 		return Token{Kind: String, Value: outBuf}, nil
 	default:
 		pr.pos-- // we need the test char
-		if token, ok := pr.readNumber(); ok {
+		var token Token
+		if token, ok = pr.readNumber(); ok {
 			return token, nil
 		}
 		ch, ok = pr.read() // we went back before parsing a number
@@ -666,159 +666,3 @@ func (pr *Tokenizer) readCharString(length int) Token {
 	pr.pos += length
 	return out
 }
-
-//  public void nextValidToken() throws IOException {
-// 	 int level = 0;
-// 	 String n1 = null;
-// 	 String n2 = null;
-// 	 int ptr = 0;
-// 	 while (nextToken()) {
-// 		 if (pr.tokenType == tkComment)
-// 			 continue;
-// 		 switch (level) {
-// 			 case 0:
-// 			 {
-// 				 if (type != tkNumber)
-// 					 return;
-// 				 ptr = file.getFilePointer();
-// 				 n1 = stringValue;
-// 				 ++level;
-// 				 break;
-// 			 }
-// 			 case 1:
-// 			 {
-// 				 if (type != tkNumber) {
-// 					 file.seek(ptr);
-// 					 pr.tokenType = tkNumber;
-// 					 stringValue = n1;
-// 					 return;
-// 				 }
-// 				 n2 = stringValue;
-// 				 ++level;
-// 				 break;
-// 			 }
-// 			 default:
-// 			 {
-// 				 if (type != tkOther || !stringValue.equals("R")) {
-// 					 file.seek(ptr);
-// 					 pr.tokenType = tkNumber;
-// 					 stringValue = n1;
-// 					 return;
-// 				 }
-// 				 pr.tokenType = tkRef;
-// 				 reference = Integer.parseInt(n1);
-// 				 generation = Integer.parseInt(n2);
-// 				 return;
-// 			 }
-// 		 }
-// 	 }
-// 	 // http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=687669#20
-// 	 if (level > 0) {
-// 		 pr.tokenType = tkNumber;
-// 		 file.seek(ptr);
-// 		 stringValue = n1;
-// 		 return;
-// 	 }
-// 	 throwError("Unexpected end of file");
-//  }
-
-// 	 public int intValue() {
-// 		 return Integer.parseInt(stringValue);
-// 	 }
-
-// 	 public boolean readLineSegment(byte input[]) throws IOException {
-// 		 int c = -1;
-// 		 boolean eol = false;
-// 		 int ptr = 0;
-// 		 int len = input.length;
-
-// 		 // ssteward, pdftk-1.10, 040922:
-// 		 // skip initial whitespace; added this because PdfReader.rebuildXref()
-// 		 // assumes that line provided by readLineSegment does not have init. whitespace;
-// 		 if ( ptr < len ) {
-// 			 while ( isWhitespace( (c = read()) ) );
-// 		 }
-// 		 while ( !eol && ptr < len ) {
-// 			 switch (c) {
-// 			 case -1:
-// 			 case '\n':
-// 				 eol = true;
-// 			 break;
-// 			 case '\r':
-// 				 eol = true;
-// 				 int cur = getFilePointer();
-// 				 if ((read()) != '\n') {
-// 					 seek(cur);
-// 				 }
-// 				 break;
-// 			 default:
-// 				 input[ptr++] = (byte)c;
-// 				 break;
-// 			 }
-
-// 			 // break loop? do it before we read() again
-// 			 if( eol || len <= ptr ) {
-// 				 break;
-// 			 }
-// 			 else {
-// 				 c = read();
-// 			 }
-// 		 }
-
-// 		 if( len <= ptr  ) {
-// 			 eol = false;
-// 			 while (!eol) {
-// 				 switch (c = read()) {
-// 				 case -1:
-// 				 case '\n':
-// 					 eol = true;
-// 				 break;
-// 				 case '\r':
-// 					 eol = true;
-// 					 int cur = getFilePointer();
-// 					 if ((read()) != '\n') {
-// 						 seek(cur);
-// 					 }
-// 					 break;
-// 				 }
-// 			 }
-// 		 }
-
-// 		 if ((c == -1) && (ptr == 0)) {
-// 			 return false;
-// 		 }
-// 		 if (ptr + 2 <= len) {
-// 			 input[ptr++] = (byte)' ';
-// 			 input[ptr] = (byte)'X';
-// 		 }
-// 		 return true;
-// 	 }
-
-// 	 public static int[] checkObjectStart(byte line[]) {
-// 		 try {
-// 			 PRTokeniser tk = new PRTokeniser(line);
-// 			 int num = 0;
-// 			 int gen = 0;
-// 			 if (!tk.nextToken() || tk.getTokenType() != tkNumber)
-// 				 return null;
-// 			 num = tk.intValue();
-// 			 if (!tk.nextToken() || tk.getTokenType() != tkNumber)
-// 				 return null;
-// 			 gen = tk.intValue();
-// 			 if (!tk.nextToken())
-// 				 return null;
-// 			 if (!tk.getStringValue().equals("obj"))
-// 				 return null;
-// 			 return new int[]{num, gen};
-// 		 }
-// 		 catch (Exception ioe) {
-// 			 // empty on purpose
-// 		 }
-// 		 return null;
-// 	 }
-
-// 	 public boolean isHexString() {
-// 		 return this.HexString;
-// 	 }
-
-//  }
