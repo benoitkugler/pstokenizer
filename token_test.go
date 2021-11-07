@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -158,6 +159,7 @@ func TestResume(t *testing.T) {
 		t.Errorf("expected %s got %s", []byte(" 4"), chunk)
 	}
 }
+
 func TestBytes(t *testing.T) {
 	input := []byte("7 8 9")
 	tk := NewTokenizer(input)
@@ -210,5 +212,35 @@ func TestStreamSpace(t *testing.T) {
 		if exp := expected[i]; p != exp {
 			t.Errorf("expected %d, got %d", exp, p)
 		}
+	}
+}
+
+func TestReset(t *testing.T) {
+	exp, err := Tokenize([]byte("7 8 9 4 5 6 4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tk := NewTokenizer([]byte("sdsdlms4d6	5d4za564"))
+	tk.NextToken()
+
+	tk.ResetFromReader(strings.NewReader("7 8 9 4 5 6 4"))
+
+	got, err := tk.readAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(exp, got) {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+
+	tk.Reset([]byte("7 8 9 4 5 6 4"))
+
+	got, err = tk.readAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(exp, got) {
+		t.Fatalf("expected %v, got %v", exp, got)
 	}
 }

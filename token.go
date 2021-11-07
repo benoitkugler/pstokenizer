@@ -6,7 +6,6 @@ package tokenizer
 // Code ported from the Java PDFTK library - BK 2020
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -106,7 +105,9 @@ func isDigit(ch byte) bool {
 // `Value` must be interpreted according to `Kind`,
 // which is left to parsing packages.
 type Token struct {
-	Value []byte // additional value found in the data
+	// Additional value found in the data
+	// Note that it is a copy of the source bytes.
+	Value []byte
 	Kind  Kind
 }
 
@@ -174,6 +175,8 @@ func (tk *Tokenizer) readAll() ([]Token, error) {
 // we support it in the tokenizer (no confusion with other types, so
 // no compromise).
 type Tokenizer struct {
+	numberSb []byte // buffer to avoid allocations
+
 	data []byte
 	src  io.Reader // if not nil, 'data' will be read from it
 
@@ -191,6 +194,7 @@ type Tokenizer struct {
 
 	currentPos int // end of the current token
 	nextPos    int // end of the +1 token
+
 }
 
 // NewTokenizer returns a tokenizer working on the
@@ -199,6 +203,14 @@ func NewTokenizer(data []byte) *Tokenizer {
 	tk := Tokenizer{data: data}
 	tk.SetPosition(0)
 	return &tk
+}
+
+// Reset allow to re-use the internal buffers allocated
+// by the tokenizer.
+func (tk *Tokenizer) Reset(data []byte) {
+	tk.data = data
+	tk.src = nil
+	tk.SetPosition(0)
 }
 
 // NewTokenizerFromReader supports tokenizing an input stream,
@@ -214,10 +226,21 @@ func NewTokenizerFromReader(src io.Reader) *Tokenizer {
 	return tk
 }
 
+// ResetFromReader allow to re-use the internal buffers allocated
+// by the tokenizer.
+func (tk *Tokenizer) ResetFromReader(src io.Reader) {
+	tk.data = tk.data[:0]
+	tk.src = src
+	tk.SetPosition(0)
+}
+
 func (tk *Tokenizer) grow(size int) {
-	data := make([]byte, size)
-	n, _ := tk.src.Read(data)
-	tk.data = append(tk.data, data[:n]...)
+	currentLen := len(tk.data)
+	if cap(tk.data) < currentLen+size {
+		tk.data = append(tk.data, make([]byte, size)...)
+	}
+	n, _ := tk.src.Read(tk.data[currentLen : currentLen+size])
+	tk.data = tk.data[:currentLen+n] // actual content read
 }
 
 // SetPosition set the position of the tokenizer in the input data.
@@ -580,18 +603,20 @@ func (pr *Tokenizer) nextToken(previous Token) (Token, error) {
 func (pr *Tokenizer) readNumber() (Token, bool) {
 	markedPos := pr.pos
 
-	sb, radix := &bytes.Buffer{}, &bytes.Buffer{}
+	pr.numberSb = pr.numberSb[:0]
+	var radix string
+
 	c, ok := pr.read() // one char is OK
 	hasDigit := false
 	// optional + or -
 	if c == '+' || c == '-' {
-		sb.WriteByte(c)
+		pr.numberSb = append(pr.numberSb, c)
 		c, _ = pr.read()
 	}
 
 	// optional digits
 	for isDigit(c) {
-		sb.WriteByte(c)
+		pr.numberSb = append(pr.numberSb, c)
 		c, ok = pr.read()
 		hasDigit = true
 	}
@@ -599,25 +624,25 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 	numberRequired := true
 	// optional .
 	if c == '.' {
-		sb.WriteByte(c)
+		pr.numberSb = append(pr.numberSb, c)
 		c, ok = pr.read()
 		// a float may terminate after . (like in 4.)
 		numberRequired = false
 	} else if c == '#' {
 		// PostScript radix number takes the form base#number
-		radix = sb
-		sb.Reset()
+		radix = string(pr.numberSb)
+		pr.numberSb = pr.numberSb[:0]
 		c, ok = pr.read()
-	} else if sb.Len() == 0 || !hasDigit {
+	} else if len(pr.numberSb) == 0 || !hasDigit {
 		// failure
 		pr.pos = markedPos
 		return Token{}, false
 	} else if c == 'E' || c == 'e' {
 		// optional minus
-		sb.WriteByte(c)
+		pr.numberSb = append(pr.numberSb, c)
 		c, ok = pr.read()
 		if c == '-' {
-			sb.WriteByte(c)
+			pr.numberSb = append(pr.numberSb, c)
 			c, ok = pr.read()
 		}
 	} else {
@@ -625,7 +650,7 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 		if ok {
 			pr.pos--
 		}
-		return Token{Value: sb.Bytes(), Kind: Integer}, true
+		return Token{Value: copyBytes(pr.numberSb), Kind: Integer}, true
 	}
 
 	// check required digit
@@ -637,19 +662,19 @@ func (pr *Tokenizer) readNumber() (Token, bool) {
 
 	// optional digits
 	for isDigit(c) {
-		sb.WriteByte(c)
+		pr.numberSb = append(pr.numberSb, c)
 		c, ok = pr.read()
 	}
 
 	if ok {
 		pr.pos--
 	}
-	if radix := radix.String(); radix != "" {
+	if radix != "" {
 		intRadix, _ := strconv.Atoi(radix)
-		valInt, _ := strconv.ParseInt(sb.String(), intRadix, 0)
+		valInt, _ := strconv.ParseInt(string(pr.numberSb), intRadix, 0)
 		return Token{Value: []byte(strconv.Itoa(int(valInt))), Kind: Integer}, true
 	}
-	return Token{Value: sb.Bytes(), Kind: Float}, true
+	return Token{Value: copyBytes(pr.numberSb), Kind: Float}, true
 }
 
 // reads a binary CharString.
@@ -662,7 +687,13 @@ func (pr *Tokenizer) readCharString(length int) Token {
 	if maxL >= len(pr.data) {
 		maxL = len(pr.data)
 	}
-	out := Token{Value: pr.data[pr.pos:maxL], Kind: CharString}
+	out := Token{Value: copyBytes(pr.data[pr.pos:maxL]), Kind: CharString}
 	pr.pos += length
+	return out
+}
+
+func copyBytes(src []byte) []byte {
+	out := make([]byte, len(src))
+	copy(out, src)
 	return out
 }
